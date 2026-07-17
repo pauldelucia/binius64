@@ -1,0 +1,42 @@
+[package]
+name = "binius-recursion-discharge"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Batched discharge of deferred Binius64 monster claims: one argument certifies K deferred O(N) monster evaluations, with a native (STEP-1) or committed-table PCS (STEP-2) final check."
+
+[lints]
+workspace = true
+
+[features]
+# Test/bench machinery: synthetic constraint systems, standalone claim synthesis, and
+# adversarial prover entry points. Not part of the library API; enabled for this crate's
+# own tests via the self dev-dependency below.
+test-utils = ["dep:rand", "dep:binius-prover"]
+
+[[bin]]
+name = "scaling_demo"
+required-features = ["test-utils"]
+
+[dependencies]
+binius-core = { path = "../core" }
+binius-field = { path = "../field" }
+binius-hash = { path = "../hash" }
+binius-prover = { path = "../prover", optional = true }
+binius-verifier = { path = "../verifier" }
+binius-transcript = { path = "../transcript" }
+binius-utils = { path = "../utils" }
+binius-iop = { path = "../iop" }
+binius-iop-prover = { path = "../iop-prover" }
+binius-math = { path = "../math" }
+binius-ip = { path = "../ip" }
+binius-ip-prover = { path = "../ip-prover" }
+anyhow.workspace = true
+itertools.workspace = true
+rand = { workspace = true, optional = true }
+sha2.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+binius-recursion-discharge = { path = ".", features = ["test-utils"] }
