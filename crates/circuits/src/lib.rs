@@ -44,3 +44,4 @@ pub mod shift;
 pub mod skein512;
 pub mod slice;
 mod util;
+pub mod vision;

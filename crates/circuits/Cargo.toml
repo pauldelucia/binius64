@@ -10,6 +10,8 @@ workspace = true
 [dependencies]
 binius-frontend = { path = "../frontend" }
 binius-core = { path = "../core" }
+binius-field = { path = "../field" }
+binius-hash = { path = "../hash" }
 blake3 = { workspace = true }
 hex-literal.workspace = true
 num-bigint = { workspace = true }
