@@ -40,6 +40,8 @@ tracing.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]
+binius-field = { path = "../field" }
+bytes.workspace = true
 criterion.workspace = true
 hex-literal.workspace = true
 

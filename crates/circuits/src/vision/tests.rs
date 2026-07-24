@@ -27,6 +27,7 @@ use binius_hash::{vision_4, vision_6};
 use rand::{SeedableRng, rngs::StdRng};
 
 use super::*;
+use crate::sha256::{State, sha256_compress, sha256_compress_2x_seq};
 
 /// Verifies AND, IMUL *and* BMUL constraints against the witness.
 ///
@@ -663,5 +664,227 @@ fn test_circuit_stats() {
 			stat.n_and_constraints, *expected_and,
 			"{name}: AND count drifted from the pinned value"
 		);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// P3a — verifier term weighting (challenger probe)
+// ---------------------------------------------------------------------------
+
+/// Per-class constraint and shifted-value-term counts of a built constraint system.
+///
+/// The verifier's monster sumcheck evaluates every constraint operand, and an operand
+/// is a fold (XOR) of [`binius_core::ShiftedValueIndex`] terms. Verifier work per
+/// constraint class is therefore proportional to the TOTAL number of such terms, not
+/// to the constraint count: an AND has 3 operands, a BMUL has 6, and real gadgets
+/// fold XOR-of-shift expressions of very different sizes into them. These counts are
+/// the measured BMUL-vs-AND weighting for the probe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct TermCounts {
+	n_and: usize,
+	n_bmul: usize,
+	/// Total `ShiftedValueIndex` terms across all AND operands (a, b, c).
+	and_terms: usize,
+	/// Total `ShiftedValueIndex` terms across all BMUL operands (a/b/c × lo/hi).
+	bmul_terms: usize,
+}
+
+impl TermCounts {
+	fn of(cs: &ConstraintSystem) -> Self {
+		let and_terms = cs
+			.and_constraints
+			.iter()
+			.map(|c| c.a.len() + c.b.len() + c.c.len())
+			.sum();
+		let bmul_terms = cs
+			.bmul_constraints
+			.iter()
+			.map(|c| {
+				c.a_lo.len()
+					+ c.a_hi.len() + c.b_lo.len()
+					+ c.b_hi.len() + c.c_lo.len()
+					+ c.c_hi.len()
+			})
+			.sum();
+		Self {
+			n_and: cs.and_constraints.len(),
+			n_bmul: cs.bmul_constraints.len(),
+			and_terms,
+			bmul_terms,
+		}
+	}
+
+	const fn total_terms(&self) -> usize {
+		self.and_terms + self.bmul_terms
+	}
+
+	const fn sub(&self, other: &Self) -> Self {
+		Self {
+			n_and: self.n_and - other.n_and,
+			n_bmul: self.n_bmul - other.n_bmul,
+			and_terms: self.and_terms - other.and_terms,
+			bmul_terms: self.bmul_terms - other.bmul_terms,
+		}
+	}
+
+	const fn div(&self, k: usize) -> Self {
+		Self {
+			n_and: self.n_and / k,
+			n_bmul: self.n_bmul / k,
+			and_terms: self.and_terms / k,
+			bmul_terms: self.bmul_terms / k,
+		}
+	}
+}
+
+fn counts_of(build: impl FnOnce(&CircuitBuilder)) -> TermCounts {
+	let b = CircuitBuilder::new();
+	build(&b);
+	let circuit = b.build();
+	TermCounts::of(circuit.constraint_system())
+}
+
+/// A chain of `k` Vision permutations of state size `M` (output feeds next input).
+fn vision_chain<const M: usize>(
+	b: &CircuitBuilder,
+	k: usize,
+	perm: impl Fn(&CircuitBuilder, [GhashWire; M]) -> [GhashWire; M],
+) {
+	let mut state: [GhashWire; M] = std::array::from_fn(|_| GhashWire::witness(b));
+	for _ in 0..k {
+		state = perm(b, state);
+	}
+	for o in &state {
+		o.force_commit(b);
+	}
+}
+
+/// A chain of `k` SHA-256 compressions (fresh witness message block each, chained state).
+fn sha256_chain(b: &CircuitBuilder, k: usize) {
+	let mut state = State::private(b);
+	for _ in 0..k {
+		let m: [binius_frontend::Wire; 16] = std::array::from_fn(|_| b.add_witness());
+		state = sha256_compress(b, state, m);
+	}
+	for w in state.0 {
+		b.force_commit(w);
+	}
+}
+
+/// A chain of `k` two-lane-packed sequential SHA-256 compression pairs (2 blocks per
+/// unit): the cheapest known in-circuit form, used by `sha256_fixed` and applicable
+/// even to strictly sequential chains via the `Sha256CompressHint` lane-merge trick.
+fn sha256_2x_chain(b: &CircuitBuilder, k: usize) {
+	let mut state = State::private(b);
+	for _ in 0..k {
+		let blocks: [[binius_frontend::Wire; 16]; 2] =
+			std::array::from_fn(|_| std::array::from_fn(|_| b.add_witness()));
+		state = sha256_compress_2x_seq(b, state, blocks);
+	}
+	for w in state.0 {
+		b.force_commit(w);
+	}
+}
+
+/// Measures the marginal (boundary-free) per-unit cost of each hash circuit by
+/// differencing chains of 4 and 8 units, and pins the resulting term weighting.
+///
+/// Run with `-- --nocapture` to see the table (this is the probe's P3a deliverable).
+#[test]
+fn test_term_counts() {
+	const K0: usize = 4;
+	const K1: usize = 8;
+	let marginal = |f: &dyn Fn(&CircuitBuilder, usize)| {
+		let small = counts_of(|b| f(b, K0));
+		let large = counts_of(|b| f(b, K1));
+		large.sub(&small).div(K1 - K0)
+	};
+
+	let v4 = marginal(&|b, k| vision_chain::<4>(b, k, vision4_permutation));
+	let v6 = marginal(&|b, k| vision_chain::<6>(b, k, vision6_permutation));
+	let sha = marginal(&|b, k| sha256_chain(b, k));
+	// One 2x_seq unit = 2 compression blocks; halve to get per-block cost.
+	let sha2x = marginal(&|b, k| sha256_2x_chain(b, k)).div(2);
+
+	println!();
+	println!("P3a — marginal per-unit constraint & shifted-value-term counts");
+	println!("(unit = one permutation / one compression block; chained, boundary-free)");
+	println!(
+		"| circuit    | n_and | n_bmul | and_terms | bmul_terms | total_terms | terms/AND | terms/BMUL |"
+	);
+	println!(
+		"|------------|-------|--------|-----------|------------|-------------|-----------|------------|"
+	);
+	for (name, c) in [
+		("Vision-4", v4),
+		("Vision-6", v6),
+		("SHA-256 1x", sha),
+		("SHA-256 2x", sha2x),
+	] {
+		let tpa = if c.n_and > 0 {
+			c.and_terms as f64 / c.n_and as f64
+		} else {
+			0.0
+		};
+		let tpb = if c.n_bmul > 0 {
+			c.bmul_terms as f64 / c.n_bmul as f64
+		} else {
+			0.0
+		};
+		println!(
+			"| {name:<10} | {:>5} | {:>6} | {:>9} | {:>10} | {:>11} | {tpa:>9.2} | {tpb:>10.2} |",
+			c.n_and,
+			c.n_bmul,
+			c.and_terms,
+			c.bmul_terms,
+			c.total_terms(),
+		);
+	}
+
+	// Pin the marginal per-unit counts so the probe numbers stay reproducible.
+	let pinned = [
+		(
+			"Vision-4",
+			v4,
+			TermCounts {
+				n_and: 320,
+				n_bmul: 576,
+				and_terms: 3016,
+				bmul_terms: 7312,
+			},
+		),
+		(
+			"Vision-6",
+			v6,
+			TermCounts {
+				n_and: 480,
+				n_bmul: 960,
+				and_terms: 3660,
+				bmul_terms: 10104,
+			},
+		),
+		(
+			"SHA-256 1x",
+			sha,
+			TermCounts {
+				n_and: 907,
+				n_bmul: 0,
+				and_terms: 11629,
+				bmul_terms: 0,
+			},
+		),
+		(
+			"SHA-256 2x",
+			sha2x,
+			TermCounts {
+				n_and: 495,
+				n_bmul: 0,
+				and_terms: 5997,
+				bmul_terms: 0,
+			},
+		),
+	];
+	for (name, got, want) in pinned {
+		assert_eq!(got, want, "{name}: marginal counts drifted from the pinned values");
 	}
 }
