@@ -794,7 +794,7 @@ impl CircuitBuilder {
 	///
 	/// # Cost
 	///
-	/// 1 AND constraint (0 if n = 0).
+	/// 1 linear constraint (none if n = 0).
 	pub fn rotl32(&self, x: Wire, n: u32) -> Wire {
 		assert!(n < 32, "rotate amount n={n} out of range");
 		if n == 0 {
@@ -816,7 +816,7 @@ impl CircuitBuilder {
 	///
 	/// # Cost
 	///
-	/// 1 AND constraint (0 if n = 0).
+	/// 1 linear constraint (none if n = 0).
 	pub fn rotr32(&self, x: Wire, n: u32) -> Wire {
 		assert!(n < 32, "rotate amount n={n} out of range");
 		if n == 0 {
@@ -838,7 +838,7 @@ impl CircuitBuilder {
 	///
 	/// # Cost
 	///
-	/// 1 AND constraint (0 if n = 0).
+	/// 1 linear constraint (none if n = 0).
 	pub fn rotl(&self, x: Wire, n: u32) -> Wire {
 		assert!(n < 64, "rotate amount n={n} out of range");
 		if n == 0 {
@@ -860,7 +860,7 @@ impl CircuitBuilder {
 	///
 	/// # Cost
 	///
-	/// 1 AND constraint (0 if n = 0).
+	/// 1 linear constraint (none if n = 0).
 	pub fn rotr(&self, x: Wire, n: u32) -> Wire {
 		assert!(n < 64, "rotate amount n={n} out of range");
 		if n == 0 {
@@ -882,7 +882,7 @@ impl CircuitBuilder {
 	///
 	/// # Cost
 	///
-	/// 1 AND constraint.
+	/// 1 linear constraint.
 	pub fn srl32(&self, x: Wire, n: u32) -> Wire {
 		assert!(n < 32, "shift amount n={n} out of range");
 		self.emit_shift(ShiftVariant::Srl32, x, n)
@@ -901,7 +901,7 @@ impl CircuitBuilder {
 	///
 	/// # Cost
 	///
-	/// 1 AND constraint.
+	/// 1 linear constraint.
 	pub fn sll32(&self, x: Wire, n: u32) -> Wire {
 		assert!(n < 32, "shift amount n={n} out of range for 32-bit half shift");
 		self.emit_shift(ShiftVariant::Sll32, x, n)
@@ -915,7 +915,7 @@ impl CircuitBuilder {
 	///
 	/// # Cost
 	///
-	/// 1 AND constraint.
+	/// 1 linear constraint.
 	pub fn shl(&self, a: Wire, n: u32) -> Wire {
 		assert!(n < 64, "shift amount n={n} out of range");
 		self.emit_shift(ShiftVariant::Sll, a, n)
@@ -929,7 +929,7 @@ impl CircuitBuilder {
 	///
 	/// # Cost
 	///
-	/// 1 AND constraint.
+	/// 1 linear constraint.
 	pub fn shr(&self, a: Wire, n: u32) -> Wire {
 		assert!(n < 64, "shift amount n={n} out of range");
 		self.emit_shift(ShiftVariant::Slr, a, n)
@@ -943,7 +943,7 @@ impl CircuitBuilder {
 	///
 	/// # Cost
 	///
-	/// 1 AND constraint.
+	/// 1 linear constraint.
 	pub fn sar(&self, a: Wire, n: u32) -> Wire {
 		assert!(n < 64, "shift amount n={n} out of range");
 		self.emit_shift(ShiftVariant::Sar, a, n)
@@ -962,7 +962,7 @@ impl CircuitBuilder {
 	///
 	/// # Cost
 	///
-	/// 1 AND constraint.
+	/// 1 linear constraint.
 	pub fn sra32(&self, a: Wire, n: u32) -> Wire {
 		assert!(n < 32, "shift amount n={n} out of range for 32-bit half shift");
 		self.emit_shift(ShiftVariant::Sra32, a, n)
